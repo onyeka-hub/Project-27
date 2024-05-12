@@ -5,7 +5,7 @@ Based on your experience on previous projects, you already have a grasp of Helm 
 
 Lets quickly discuss the different options, and make an informed decision before starting the actual work.
 
-1. **Write YAML files and deploy with kubectl** – This is the easiest method where you write YAML for deployments, services, ingress, and all of that, and then deploy with **kubectl apply -f <YAML-FILE>**. This is usually the default way when getting started with kubernetes. OR during development and exploration. But it is not sufficient or reliable when it comes to managing the infrastructure in production. It is hard work to keep track of multiple yaml files. You can imagine what will be the fate of your project if there are tens or hundreds of microservices/applications that needs to be managed across multiple environments. With this type of approach, you will end up in a PEBKAC Situation https://www.google.com/search?q=PEBKAC+situation&rlz=1C5CHFA_enGB766GB766&oq=PEBKAC+situation&aqs=chrome..69i57j33i160.1849j0j7&sourceid=chrome&ie=UTF-8
+1. **Write YAML files and deploy with kubectl** – This is the easiest method where you write YAML for deployments, services, ingress, and all of that, and then deploy with **kubectl apply -f `<YAML-FILE>`**. This is usually the default way when getting started with kubernetes. OR during development and exploration. But it is not sufficient or reliable when it comes to managing the infrastructure in production. It is hard work to keep track of multiple yaml files. You can imagine what will be the fate of your project if there are tens or hundreds of microservices/applications that needs to be managed across multiple environments. With this type of approach, you will end up in a PEBKAC Situation https://www.google.com/search?q=PEBKAC+situation&rlz=1C5CHFA_enGB766GB766&oq=PEBKAC+situation&aqs=chrome..69i57j33i160.1849j0j7&sourceid=chrome&ie=UTF-8
 
 2. **Use a templating engine like HELM** – You already know about Helm. Its value propositions to install applications, manage the lifecycle of those applications across multiple environments, and customise applications through templating. Without going deeper into its obvious benefits, it also has its downsides too. for example;
     1. Helm only adds value when you install community components. Tools you can easily find on artifacthub.io Otherwise you need to write yaml anyway.
@@ -27,7 +27,7 @@ To understand better, let’s look at a hands-on example.
 
 ### Installing Kustomize
 
-Kustomize comes pre bundled with kubectl version >= 1.14. You can check your version using kubectl version. If version is 1.14 or greater there’s no need to take any steps.
+Kustomize comes pre-bundled with kubectl version >= 1.14. You can check your version using kubectl version. If version is 1.14 or greater there’s no need to take any steps.
 
 For a stand alone Kustomize installation(aka Kustomize cli), go through the official documentation to install Kustomize – Here https://kubectl.docs.kubernetes.io/installation/kustomize/
 
@@ -41,11 +41,169 @@ kustomize is an implementation of Declarative Application Management (DAM) https
 
 It is a configuration management solution that leverages layering to preserve the base settings of your applications and components by overlaying declarative yaml artifacts (called patches) that selectively override default settings without actually changing the original files.
 
+Kustomize introduces a template-free way to customize application. We can keep our yaml files like the deployment, namespace, service, configmap untouched and take the changes (patches) and deploy it on different environment using the kustomoization.yaml file. The kustomization.yaml file describes what we want our bundles to look like. 
+
 Kustomize relies on the following system of configuration management layering to achieve reusability:
 
 - Base Layer – Specifies the most common resources
 - Patch Layers – Specifies use case specific resources
 
+### Example 1
+Let’s step through how Kustomize works using a deployment scenario involving 2 different environments: **dev** and **prod**. In this example we’ll use resources as contained in the **application** folder as shown below:
+```
+    ── application
+       ├── deployment.yaml
+       ├── kustomization.yaml
+       |-- configmap.yaml
+       |-- namespace.yaml
+       └── service.yaml
+```
+
+We can deploy the application above by running the below command where we used **-k** instead of **-f**. We are just using kustomise to apply it instead of kubectl.
+```
+kubectl apply -k ./application
+```
+
+Output will look like this;
+```
+namespace/nginx created
+configmap/website-index-file created
+service/nginx-service created
+deployment.apps/nginx-deployment created
+```
+
+When we want to have different configuration in our dev or prod environment, we can now introduce what we call **overlays**. This contains the folders for different configurations for dev and prod. The application folder will look like below
+```
+└── application
+    ├── base
+    │   ├── deployment.yaml
+    │   ├── kustomization.yaml
+    |   |-- configmap.yaml
+    │   └── service.yaml
+    └── overlays
+        ├── dev
+        │   ├── kustomization.yaml
+        |   |-- replica-count.yaml
+        |   |-- namespace.yaml
+        |   └── index-file
+        ├── prod
+            ├── kustomization.yaml
+            |-- replica-count.yaml
+            |-- namespace.yaml
+            └── index-file
+```
+
+```
+kubectl apply -k ./application/overlays/dev
+```
+
+Output:
+```
+namespace/nginx-dev created
+configmap/website-index-file created
+service/nginx-service created
+deployment.apps/nginx-deployment created
+```
+
+We can see that overlays are a good way of patching a deployment without touching the existing yaml files. You will also notice that replica-count.yaml files in the dev and prod env contains different replicas. You can also apply to prod env by running the command for prod deployment.
+
+```
+kubectl apply -k ./application/overlays/prod
+```
+
+### Configuration
+If you take a look at our application, you will notice that the same configuration/configmap which contains the same index-file is deployed to both dev and prod environments from our base template which is a problem. Ideally we want every environment to have its own configuration. Therefore there must be a way of changing the configuration of the app in any environment to be different from each other.Kustomize have the ability to generate configs and from files. Add another file index-file.html in the ./application/overlays/prod and ./application/overlays/dev folders. This can be done by using **configMapGenerator**.
+
+Go to ./application/overlays/dev/kustomization.yaml and add the snippet below
+```
+configMapGenerator:
+- name: website-index-file
+  behavior: replace
+  files:
+    - index-file
+```
+We are telling kustomize to target website-index-file configmap and replace (behavior) the index-file with the index-file.html file provided.
+
+```
+kubectl apply -k ./application/overlays/dev
+```
+
+Output:
+```
+namespace/nginx-dev unchanged
+configmap/website-index-file configured
+service/nginx-service unchanged
+deployment.apps/nginx-deployment unchanged
+```
+
+### Environmental Variables
+What if we want to inject some envirnmental variable into our pods, kustomize also has the ability to achieve this using **patchesStrategicMerge**. Go to ./application/overlays/dev and add a file **env.yaml** which contain the exact env var you want to add.
+
+We are telling kustomize to target the container with the specied name in the base resources and add the env var (dev-app) if its not there or update with the one already there.
+
+Go to ./application/overlays/dev/kustomization.yaml and add the snippet below
+```
+patchesStrategicMerge:
+- env.yaml
+```
+
+```
+kubectl apply -k ./application/overlays/dev
+```
+
+Output:
+```
+namespace/nginx-dev unchanged
+configmap/website-index-file unchanged
+service/nginx-service unchanged
+deployment.apps/nginx-deployment configured
+```
+
+![env var](./images/env-var.PNG)
+
+### Rolling Deploy
+This is the ability to change the image tag of a deployment without changing the original deployment. Kustomize allows us to do that using the images field.
+
+Go to ./application/overlays/dev/kustomization.yaml and add the snippet below for the images field.
+```
+images:
+- name: nginx
+  newTag: perl
+```
+
+#### Rolling Config
+In kubernetes, a pod consumes configmap when that pod is created. If the configmap changes, the pod that are still running cannot consume or pick up the new changes untill it is deleted or restarted. The same thing happens to kustomize. Previously when we changed the configmap, the pod was not able to pick up the changes. Which means that kustomize doesnt manage our configuration and can be a problem sometimes.
+
+So how do we get kustomize to manage our configmaps. If we want pod to consume our configmap any time we do some changes, we will need to use the auto rollout feature of the configmap generator. To do that first go to the base folder and remove the configmap there because we want kustomize to generate and manage our configmaps instead. Then go to our dev or prod environment and remove the behavior of replacing the configmap because we are not targeting  the original configmap any more, we want kustomize to generate a nem configmap on the fly using our configmapGenenator that we defined there.
+
+```
+kubectl apply -k ./application/overlays/dev
+```
+
+Output:
+```
+namespace/nginx-dev unchanged
+configmap/website-index-file-m5f7c8m55g created
+service/nginx-service unchanged
+deployment.apps/nginx-deployment configured
+```
+
+From the above, kustomize will generate a new configmap with a random number attached to it.
+It will also mount that configmap into the deployment. When you do get pod, you will notice that a new pod has been craeted. If the configmap is changed and kustomize applied, you will notice a new configmap with another different random string and the configmap mounted to the deployment.
+
+### Uninstalling Application
+```
+kubectl delete -k ./application/overlays/dev
+```
+
+```
+namespace "nginx-dev" deleted
+configmap "website-index-file-hh468th2k6" deleted
+service "nginx-service" deleted
+deployment.apps "nginx-deployment" deleted
+```
+
+### Example 2
 Let’s step through how Kustomize works using a deployment scenario involving 3 different environments: **dev, sit**, and **prod**. In this example we’ll use service, deployment, and namespace resources. For the dev environment, there wont be any specific changes as it will use the same configuration from the base setting. In sit and prod environments, the replica settings will be different.
 
 Using the tooling app for this example, create a folder structure as below.
@@ -133,8 +291,8 @@ spec:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - deployment.yaml
-  - service.yaml
+- deployment.yaml
+- service.yaml
 ```
 
 The resources being monitored here are **deployment** and **services**. You can simply add more to the list as you wish.
@@ -145,7 +303,7 @@ It is assumed that we will need to deploy kubernetes resources across multiple e
 
 In the **overlays** folder – This is where you manage multiple environments. In each environment, there is a Kustomize file that tells Kustomize where to find the base setting, and how to **patch** the environment using the **base** as the starting point.
 
-In the **dev** environment for example, the namespace for dev is created, and the deployment is patched to use a replica count of **“3”** different from the base setting of **“1”**. So Kustomize will simply create all the resources in base, in addition to whatever is specified in the dev directory. We will discuss patching a little further in the following section.
+In the **dev** environment for example, the namespace for dev is created, and the deployment is patched to use a replica count of **“3”** different from the base setting of **“1”**. So Kustomize will simply create all the resources in base, in addition to whatever is specified in the dev directory.
 
 Lets have a look at what each file contains.
 
@@ -171,7 +329,7 @@ spec:
 ```
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: dev
+namespace: dev-tooling
 bases:
 - ../../base
 
@@ -179,7 +337,7 @@ commonLabels:
   env: dev-tooling
 
 resources:
-  - namespace.yaml
+- namespace.yaml
 ```
 
 The Kustomization file for **dev** here specifies that the base configuration should be applied, and include the yaml file(s) specified in the resources section. It also indicates what namespace the configuration should be applied to.
@@ -192,6 +350,36 @@ In summary it specifies the following;
 - The location of the base folder, where the base configuration can be found.
 - The resource(s) to be created – Such as a namespace or deployment
 - A **commonLabel** field which ensures that kubernetes labels and selectors are automatically injected into the resources being created. such as below;
+
+Now lets apply the configuration and see what happens.
+```
+kubectl apply -k overlays/dev
+```
+
+Notice that the the apply flag here is **-k** rather than the **-f** we have been using all along. This is because kubectl has been made aware of Kustomize. You can use kustomize cli directly, but since you are already familiar with kubectl, it just makes sence to use the kustomize flag that comes bundled with kubectl.
+
+Output will look like this;
+
+```
+namespace/dev-tooling created
+service/tooling-service created
+deployment.apps/tooling-deployment created
+```
+
+```
+$ kubectl get all -n dev-tooling
+NAME                                      READY   STATUS    RESTARTS   AGE
+pod/tooling-deployment-5974855449-l6lqp   1/1     Running   0          2m3s
+
+NAME                      TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+service/tooling-service   ClusterIP   172.20.204.201   <none>        80/TCP    2m7s
+
+NAME                                 READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/tooling-deployment   1/1     1            1           2m7s
+
+NAME                                            DESIRED   CURRENT   READY   AGE
+replicaset.apps/tooling-deployment-5974855449   1         1         1       2m8s
+```
 
 Generally, A kustomization file contains fields falling into four categories (although not all have been used in the example above):
 
@@ -225,10 +413,10 @@ commonLabels:
   env: dev-tooling
 
 resources:
-  - namespace.yaml
+- namespace.yaml
 
 patches:
-  - deployment.yaml
+- deployment.yaml
 ```
 
 Now lets apply the configuration and see what happens.
@@ -236,24 +424,22 @@ Now lets apply the configuration and see what happens.
 kubectl apply -k overlays/dev
 ```
 
-Notice that the the apply flag here is **-k** rather than the **-f** we have been using all along. This is because kubectl has been made aware of Kustomize. You can use kustomize cli directly, but since you are already familiar with kubectl, it just makes sensee to use the kustomize flag that comes bundled with kubectl.
-
 Output will look like this;
 
 ```
-namespace/dev-tooling created
-service/tooling-service created
-deployment.apps/tooling-deployment created
+namespace/dev-tooling unchanged
+service/tooling-service unchanged
+deployment.apps/tooling-deployment configured
 ```
 
-## Self Side Task:
+### Self Side Task:
 
 With your understanding of how kustomize is able to patch resources per environment, now configure both **SIT** and **PROD** environments with their respective overlays and set different configuration values for
 
 - pod replica
 - resource limit and requests
 
-### Helm Template Engine vs. Kustomize Overlays
+## Helm Template Engine vs. Kustomize Overlays
 
 Both technologies have good reasons why they are designed the way they are. But most of the experienced engineers in the industry would rather get the best of both worlds.
 
@@ -261,15 +447,15 @@ With helm, you can simply install already packaged applications from artifacthub
 
 For business applications, you can choose to package your applications in helm and simply patch the values files with kustomize as well. But you might also just use helm only for applications you wish to download from the public, and use kustomize directly for business applications.
 
-### Integrate the tooling app with Amazon Aurora for Dev, SIT, and PROD environments
+## Integrate the tooling app with Amazon Aurora for Dev, SIT, and PROD environments
 
 1. Configure Terraform to deploy an aurora instance
 2. Use the tooling.sql script to load the database schema
-3. Configure environment variables for database connectivity in the deployment file and patch the each environment for the appropriate values
+3. Configure environment variables for database connectivity in the deployment file and patch each environment for the appropriate values
 
 ### Integrate Vault with Kubernetes
 
-Before we integrate Vault with our Kubernetes cluster, we will have will be using Helm and Kustomize to for the installation. The **vault helm chart** is the recommended way to install vault in a kubernetes cluster and configure it. In this project we will configure Vault to use **High Availability Mode with Integrated storage (Raft)**, This is recommended for production-ready deployment. This installs a StatefulSet of Vault server Pods with either Integrated Storage, or a Consul storage backend. The Vault Helm chart, however, can also configure Vault to run in standalone mode, or dev.
+Before we integrate Vault with our Kubernetes cluster, we will be using Helm and Kustomize for the installation. The **vault helm chart** is the recommended way to install vault in a kubernetes cluster and configure it. In this project we will configure Vault to use **High Availability Mode with Integrated storage (Raft)**, This is recommended for production-ready deployment. This installs a StatefulSet of Vault server Pods with either Integrated Storage, or a Consul storage backend. The Vault Helm chart, however, can also configure Vault to run in standalone mode, or dev.
 
 Create the folder structure as below:
 ```
@@ -323,7 +509,7 @@ kind: Namespace
 metadata:
   name: vault
   labels:
-    env: vault=dev
+    env: vault-dev
 ```
 
 **vault/overlays/dev/kustomization.yaml**
@@ -357,7 +543,7 @@ generatorOptions:
   disableNameSuffixHash: true
 ```
 
-Break down of the Kustomization declaritive yaml field above:
+Break down of the Kustomization declarative yaml field above:
 
 - **namespace** – Namespace to add to all objects. This will overwrite the .metadata.namespace of the resources that will be created.
 - **resources** – Each entry in resources list must be a path to a file, or a path (or URL) referring to another **kustomization** directory.
@@ -371,17 +557,18 @@ Break down of the Kustomization declaritive yaml field above:
     - **namespace**: [Optional] The namespace which will be used by –namespace flag in helm template command.
     - **valuesFile**: [Optional] A path to the values file.
     - **valuesInline**: holds value mappings specified directly, rather than in a separate file.
-    - **valuesMerge**: specifies how to treat valuesInline with respect to Values. Legal values: ‘merge’, ‘override’, ‘replace’. Defaults to ‘override’.
+    - **valuesMerge**: specifies how to treat valuesInline with respect to Values.
+    - **Legal values**: ‘merge’, ‘override’, ‘replace’. Defaults to ‘override’.
     - **includeCRDs**: specifies if Helm should also generate CustomResourceDefinitions. Defaults to ‘false’.
     - **configHome**: [Optional] The value that kustomize should pass to helm via HELM_CONFIG_HOME environment variable. If omitted, {tmpDir}/helm is used, where {tmpDir} is some temporary.
 
-**vault/overlays/sit/.env** – The dotenv file is used to pass the Vault KMS key into the vault configuration, which you will see later.
+**vault/overlays/dev/.env** – The dotenv file is used to pass the Vault KMS key into the vault configuration, which you will see later.
 ```
 VAULT_SEAL_TYPE=awskms
 VAULT_AWSKMS_SEAL_KEY_ID=<arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab>
 ```
 
-**vault/overlays/dev/values.yaml** – Most of the configuration for the Vault installation will be done in this values file. Before we start adding add the values file, create a folder (“terraform”) in the root directory of your workspace which you will use to create **AWS Key Management Service (KMS)** key and **IAM roles** for service accounts. Your folder structure will look like this:
+**vault/overlays/dev/values.yaml** – Most of the configuration for the Vault installation will be done in this values file. Before we start adding the values file, create a folder (“terraform”) in the root directory of your workspace which you will use to create **AWS Key Management Service (KMS)** key and **IAM roles** for service accounts. Your folder structure will look like this:
 ```
 ├── terraform/
 │   ├── main.tf
@@ -427,7 +614,7 @@ terraform {
 }
 
 provider "aws" {
-  region = "eu-west-2"
+  region = "us-east-2"
 }
 ```
 
@@ -511,9 +698,9 @@ terraform init
 Run the command terraform plan to preview the changes that Terraform plans to make to your infrastructure, then terraform apply to executes the actions proposed in the plan.
 
 ```
-terraform plan -out tfplan
+terraform plan
 
-terraform apply tfplan
+terraform apply
 ```
 
 Before we add the content of the values file, we need to install Ingress Controller and Cert-Manager. If you don’t have those tools installed in your cluster, you can reference Project 25 for this.
@@ -527,7 +714,7 @@ helm upgrade --install ingress-nginx ingress-nginx \
 
 This will install the controller in the ingress-nginx namespace, creating that namespace if it doesn’t already exist.
 
-- Cert-Manager: This a Kubernetes addon to automate the management and issuance of TLS certificates from various issuing sources. It will ensure certificates are valid and up to date periodically, and attempt to renew certificates at an appropriate time before expiry. Visit the project 25 documentation for the installation.
+- Cert-Manager: This is a Kubernetes addon to automate the management and issuance of TLS certificates from various issuing sources. It will ensure certificates are valid and up to date periodically, and attempt to renew certificates at an appropriate time before expiry. Visit the project 25 documentation for the installation.
 
 After the installation of cert-manager and the ingress controller the next step is to configure the vault installation from the values file then deploy it.
 
@@ -541,8 +728,8 @@ server:
     # Overrides the default Image Pull Policy
     pullPolicy: IfNotPresent
 
-  # Configure the Update Strategy Type for the StatefulSet
-  updateStrategyType: "OnDelete"
+  # Configure the Update Onu Type for the StatefulSet
+  updateOnuType: "OnDelete"
 
   # Ingress allows ingress services to be created to allow external access
   # from Kubernetes to access Vault pods.
@@ -724,7 +911,9 @@ ui:
 
 **Install Vault**: Update the ServiceAccount annotations with 
 
-jsonpath=”{server.serviceAccount.annotations}” with your account ID. Change directory to the vault directory and run the command below to install vault in your cluster. Replace the “vault.masterclass.dev.darey.io” with your domain name and update the record on your hosted zone.
+jsonpath=”{server.serviceAccount.annotations}” with your account ID.
+
+Change directory to the vault directory and run the command below to install vault in your cluster. Replace the “vault.masterclass.dev.darey.io” with your domain name and update the record on your hosted zone.
 
 From the values file above we are using **ingress** under the **server** field to configure the ingress. The ingress is configured with TLS certificate, and the certificate is managed by **Cert-manager** which is configured with the ingress annotation as you can see below.
 ```
@@ -742,21 +931,77 @@ kubectl apply -k overlays/dev
 Follow the next steps to initialize the Vault cluster.
 
 - Run the command below to execute commands in one of the pod with running status
-`kubectl exec -n vault -it <running_vault_pod_name> -- /bin/sh` vault-running-pod `pod/vault-0` is the pod in running status in this image
-- Check the status the vault cluster `vault status`, you should get an output similar to this:
-`--- ----- Recovery Seal Type awskms Initialized false Sealed true Total Recovery Shares 0 Threshold 0 Unseal Progress 0/0 Unseal Nonce n/a Version 1.11.3 Storage Type raft HA Enabled true`
-- To initialize the Vault cluster you will run:`vault operator init` You should get something similar to this after initializing the Vault cluster:
-` Recovery Key 1: iz1XWx...C+MA6Rc Recovery Key 2: rKZETr...+bjeUT7 Recovery Key 3: 4XA/KJ...dlUjRFv Recovery Key 4: lfnaYo...AfKkUmd Recovery Key 5: L169hH...kGWdUtW Initial Root Token: hvs.UWnDag...L72wysn Success! Vault is initialized Recovery key initialized with 5 key shares and a key threshold of 3. Please securely distribute the key shares printed above.`
- Copy the output into a file and save it.
+```
+kubectl exec -n vault -it <running_vault_pod_name> -- /bin/sh
+```
+
+vault-running-pod **pod/vault-0** is the pod in running status in this image
+
+- Check the status the vault cluster 
+```
+vault status
+```
+Output similar to this:
+```
+Recovery Seal Type awskms
+Initialized false 
+Sealed true 
+Total Recovery Shares 0 
+Threshold 0 
+Unseal Progress 0/0 
+Unseal Nonce n/a 
+Version 1.11.3 
+Storage Type raft 
+HA Enabled true
+```
+
+- To initialize the Vault cluster you will run:
+```
+vault operator init
+```
+
+You should get something similar to this after initializing the Vault cluster:
+
+```
+ Recovery Key 1: iz1XWx...C+MA6Rc Recovery 
+ Key 2: rKZETr...+bjeUT7 Recovery 
+ Key 3: 4XA/KJ...dlUjRFv Recovery 
+ Key 4: lfnaYo...AfKkUmd Recovery 
+ Key 5: L169hH...kGWdUtW Initial 
+ Root Token: hvs.UWnDag...L72wysn 
+ Success! Vault is initialized Recovery key initialized with 5 key shares and a key threshold of 3. Please securely distribute the key shares printed above.
+```
+Copy the output into a file and save it.
+
 - Check the status after when the vault cluster is unseal `vault status`:
-`Key Value --- ----- Recovery Seal Type shamir Initialized true Sealed false Total Recovery Shares 5 Threshold 3 Version 1.11.3 Build Date 2022-08-26T10:27:10Z Storage Type raft Cluster Name vault-cluster-741dfb4f Cluster ID d1879609-c784-9647-12a6-72cc65ecf37a HA Enabled true HA Cluster https://vault-1.vault-internal:8201 HA Mode active Active Since 2022-10-21T01:47:06.989163982Z Raft Committed Index 10252 Raft Applied Index 10252`
- From the vault status output before you initialize the Vault cluster will see that the seal type is **awskms**, but after initializing the vault cluster you will get the **recovery keys** (instead of **unseal keys**) because some of the Vault operations still require **shamir keys**. The Recovery keys generated after running vault operator init can be used to unseal the cluster when it is sealed manually or to regenerate a root token.The **awskms** key type is used for **auto unseal**, using the **awskms** key type you don’t have to manually unseal the pod if it gets recreated. Move to the next page to see how you can inject secrets from the Vault cluster into an application.
+
+```
+Key Value --- ----- 
+Recovery Seal 
+Type shamir 
+Initialized true 
+Sealed false 
+Total Recovery 
+Shares 5 
+Threshold 3 
+Version 1.11.3 
+Build Date 2022-08-26T10:27:10Z 
+Storage Type raft 
+Cluster Name vault-cluster-741dfb4f 
+Cluster ID d1879609-c784-9647-12a6-72cc65ecf37a 
+HA Enabled true 
+HA Cluster https://vault-1.vault-internal:8201 
+HA Mode active Active Since 2022-10-21T01:47:06.989163982Z Raft Committed Index 10252 Raft Applied Index 10252
+```
+
+From the vault status output before you initialize the Vault cluster you will see that the seal type is **awskms**, but after initializing the vault cluster you will get the **recovery keys** (instead of **unseal keys**) because some of the Vault operations still require **shamir keys**. The Recovery keys generated after running vault operator init can be used to unseal the cluster when it is sealed manually or to regenerate a root token.The **awskms** key type is used for **auto unseal**, using the **awskms** key type you don’t have to manually unseal the pod if it gets recreated. Move to the next page to see how you can inject secrets from the Vault cluster into an application.
 
 ## Dynamically inject secrets into the tooling app container
 
 In this session we will see how we can securely inject the tooling application database credentials from the vault cluster into the tooling application. This method can be used to pass secrets credentials like password, token and other secrets credential into an application without the application being aware of the vault cluster.
 
 To store the secrets we need to create a Vault secret of type **KV Version 2**, this is a versioned Key-Value store. You can exit out of the vault pod and install Vault on your local machine from here https://developer.hashicorp.com/vault/downloads if you don’t have vault installed on your system. Export the vault address and login.
+
 ```
 export VAULT_ADDR="https://vault.masterclass.dev.darey.io"
 
@@ -867,15 +1112,15 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: dev
 resources:
-  - ../../base
-  - namespace.yaml
-  - service-account.yaml
+- ../../base
+- namespace.yaml
+- service-account.yaml
 
 commonLabels:
   env: dev-tooling
 
 patches:
-  - deployment.yaml
+- deployment.yaml
 ```
 
 Now lets apply the configuration.
@@ -918,3 +1163,12 @@ vault-kubernetes-auth
 Navigate to the vault policy attached to the **tooling-role** kubernetes auth method.
 
 vault-policy
+
+## Reference
+
+https://www.youtube.com/playlist?list=PLHq1uqvAteVtq-NRX3yd1ziA_wJSBu3Oj
+
+https://github.com/marcel-dempers/docker-development-youtube-series/tree/master
+
+https://github.com/jweissig/vault-k8s-sidecar-demo?tab=readme-ov-file
+
