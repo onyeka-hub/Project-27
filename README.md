@@ -5,7 +5,7 @@ Based on your experience on previous projects, you already have a grasp of Helm 
 
 Lets quickly discuss the different options, and make an informed decision before starting the actual work.
 
-1. **Write YAML files and deploy with kubectl** – This is the easiest method where you write YAML for deployments, services, ingress, and all of that, and then deploy with **kubectl apply -f `<YAML-FILE>`**. This is usually the default way when getting started with kubernetes. OR during development and exploration. But it is not sufficient or reliable when it comes to managing the infrastructure in production. It is hard work to keep track of multiple yaml files. You can imagine what will be the fate of your project if there are tens or hundreds of microservices/applications that needs to be managed across multiple environments. With this type of approach, you will end up in a PEBKAC Situation https://www.google.com/search?q=PEBKAC+situation&rlz=1C5CHFA_enGB766GB766&oq=PEBKAC+situation&aqs=chrome..69i57j33i160.1849j0j7&sourceid=chrome&ie=UTF-8
+1. **Write YAML files and deploy with kubectl** – This is the easiest method where you write YAML for deployments, services, ingress, and all of that, and then deploy with **kubectl apply -f `<YAML-FILE>`**. This is usually the default way when getting started with kubernetes. OR during development and exploration. But it is not sufficient or reliable when it comes to managing the infrastructure in production. It is hard work to keep track of multiple yaml files. You can imagine what will be the fate of your project if there are tens or hundreds of microservices/applications that needs to be managed across multiple environments. With this type of approach, you will end up in a PEBKAC Situation. Read [more](https://www.google.com/search?q=PEBKAC+situation&rlz=1C5CHFA_enGB766GB766&oq=PEBKAC+situation&aqs=chrome..69i57j33i160.1849j0j7&sourceid=chrome&ie=UTF-8)
 
 2. **Use a templating engine like HELM** – You already know about Helm. Its value propositions to install applications, manage the lifecycle of those applications across multiple environments, and customise applications through templating. Without going deeper into its obvious benefits, it also has its downsides too. for example;
     1. Helm only adds value when you install community components. Tools you can easily find on artifacthub.io Otherwise you need to write yaml anyway.
@@ -13,7 +13,7 @@ Lets quickly discuss the different options, and make an informed decision before
     3. Learning another DevOps tool. Always be careful about introducing yet another tool into your team/project. Similar to number 3 above, it slows down the project.
     4. Everyone’s Kubernetes cluster is different. Your needs are different. You might need to make a change to the way the chart is deployed – like changing a small piece of configuration in the templates folder. But, like a remote control, you’ve only got a limited set of controls which are exposed to you (the values that are exposed in the values.yaml file). If you want to make any deeper changes to the Helm chart, you’ll need to fork it and change it yourself. (This is a bit like taking a remote control apart, and adding a new button!)
 
-3. **Kustomize Overlays** – To overcome the challenges of **Helm** identified above, using a tool that is already embeded as part of **kubectl**; which you are already familiar with makes more sense for most use cases. You will get to see how Kustomize works shortly. For now, understand that another option is to use Overlays, instead of a templating engine. The downside to this is that it does not manage the lifecycle of your aplications like Helm is able to do. Therefore, you will need to use other methods alongside Kustomize for this.
+3. **Kustomize Overlays** – To overcome the challenges of **Helm** identified above, using a tool that is already embeded as part of **kubectl**; which you are already familiar with makes more sense for most use cases. You will get to see how Kustomize works shortly. For now, understand that another option is to use **overlays**, instead of a templating engine. The downside to this is that it does not manage the lifecycle of your aplications like Helm is able to do. Therefore, you will need to use other methods alongside Kustomize for this.
 
 Before we make a final decision on how we will realistically manage deployments into Kubernetes, lets see how Kustomize works.
 
@@ -29,7 +29,7 @@ To understand better, let’s look at a hands-on example.
 
 Kustomize comes pre-bundled with kubectl version >= 1.14. You can check your version using kubectl version. If version is 1.14 or greater there’s no need to take any steps.
 
-For a stand alone Kustomize installation(aka Kustomize cli), go through the official documentation to install Kustomize – Here https://kubectl.docs.kubernetes.io/installation/kustomize/
+For a stand alone Kustomize installation (aka Kustomize cli), go through the official documentation to install Kustomize – [Here](https://kubectl.docs.kubernetes.io/installation/kustomize/)
 
 ### Working with Kustomize
 
@@ -37,7 +37,7 @@ kustomize is a command line tool supporting template-free, structured customizat
 
 Targeted to k8s means that kustomize has some understanding of API resources, k8s concepts like names, labels, namespaces, etc. and the semantics of resource patching.
 
-kustomize is an implementation of Declarative Application Management (DAM) https://kubectl.docs.kubernetes.io/references/kustomize/glossary/#declarative-application-management. A set of best practices around managing k8s clusters.
+kustomize is an implementation of Declarative Application Management [(DAM)](https://kubectl.docs.kubernetes.io/references/kustomize/glossary/#declarative-application-management). A set of best practices around managing k8s clusters.
 
 It is a configuration management solution that leverages layering to preserve the base settings of your applications and components by overlaying declarative yaml artifacts (called patches) that selectively override default settings without actually changing the original files.
 
@@ -60,7 +60,7 @@ Let’s step through how Kustomize works using a deployment scenario involving 2
 ```
 
 We can deploy the application above by running the below command where we used **-k** instead of **-f**. We are just using kustomise to apply it instead of kubectl.
-```
+```sh
 kubectl apply -k ./application
 ```
 
@@ -93,7 +93,7 @@ When we want to have different configuration in our dev or prod environment, we 
             └── index-file
 ```
 
-```
+```sh
 kubectl apply -k ./application/overlays/dev
 ```
 
@@ -107,15 +107,15 @@ deployment.apps/nginx-deployment created
 
 We can see that overlays are a good way of patching a deployment without touching the existing yaml files. You will also notice that replica-count.yaml files in the dev and prod env contains different replicas. You can also apply to prod env by running the command for prod deployment.
 
-```
+```sh
 kubectl apply -k ./application/overlays/prod
 ```
 
 ### Configuration
-If you take a look at our application, you will notice that the same configuration/configmap which contains the same index-file is deployed to both dev and prod environments from our base template which is a problem. Ideally we want every environment to have its own configuration. Therefore there must be a way of changing the configuration of the app in any environment to be different from each other.Kustomize have the ability to generate configs and from files. Add another file index-file.html in the ./application/overlays/prod and ./application/overlays/dev folders. This can be done by using **configMapGenerator**.
+If you take a look at our application, you will notice that the same configuration/configmap which contains the same index-file is deployed to both dev and prod environments from our base template which is a problem. Ideally we want every environment to have its own configuration. Therefore there must be a way of changing the configuration of the app in any environment to be different from each other. Kustomize have the ability to generate configs from files. Add another file index-file.html in the ./application/overlays/prod and ./application/overlays/dev folders. This can be done by using **configMapGenerator**.
 
 Go to ./application/overlays/dev/kustomization.yaml and add the snippet below
-```
+```yaml
 configMapGenerator:
 - name: website-index-file
   behavior: replace
@@ -124,7 +124,7 @@ configMapGenerator:
 ```
 We are telling kustomize to target website-index-file configmap and replace (behavior) the index-file with the index-file.html file provided.
 
-```
+```sh
 kubectl apply -k ./application/overlays/dev
 ```
 
@@ -142,12 +142,12 @@ What if we want to inject some envirnmental variable into our pods, kustomize al
 We are telling kustomize to target the container with the specied name in the base resources and add the env var (dev-app) if its not there or update with the one already there.
 
 Go to ./application/overlays/dev/kustomization.yaml and add the snippet below
-```
+```yaml
 patchesStrategicMerge:
 - env.yaml
 ```
 
-```
+```sh
 kubectl apply -k ./application/overlays/dev
 ```
 
@@ -165,7 +165,7 @@ deployment.apps/nginx-deployment configured
 This is the ability to change the image tag of a deployment without changing the original deployment. Kustomize allows us to do that using the images field.
 
 Go to ./application/overlays/dev/kustomization.yaml and add the snippet below for the images field.
-```
+```yaml
 images:
 - name: nginx
   newTag: perl
@@ -176,7 +176,7 @@ In kubernetes, a pod consumes configmap when that pod is created. If the configm
 
 So how do we get kustomize to manage our configmaps. If we want pod to consume our configmap any time we do some changes, we will need to use the auto rollout feature of the configmap generator. To do that first go to the base folder and remove the configmap there because we want kustomize to generate and manage our configmaps instead. Then go to our dev or prod environment and remove the behavior of replacing the configmap because we are not targeting  the original configmap any more, we want kustomize to generate a nem configmap on the fly using our configmapGenenator that we defined there.
 
-```
+```sh
 kubectl apply -k ./application/overlays/dev
 ```
 
@@ -192,7 +192,7 @@ From the above, kustomize will generate a new configmap with a random number att
 It will also mount that configmap into the deployment. When you do get pod, you will notice that a new pod has been craeted. If the configmap is changed and kustomize applied, you will notice a new configmap with another different random string and the configmap mounted to the deployment.
 
 ### Uninstalling Application
-```
+```sh
 kubectl delete -k ./application/overlays/dev
 ```
 
@@ -234,7 +234,7 @@ Now, lets walk through the content of each file.
 
 **tooling-app-kustomize/base/deployment.yaml** – This is a standard kubernetes yaml file for a deployment.
 
-```
+```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -253,7 +253,7 @@ spec:
     spec:
       containers:
       - name: tooling
-        image: dareyregistry/tooling-app:1.0.2
+        image: dareyregistry/tooling-app:1.0.3
         ports:
         - containerPort: 80
         resources:
@@ -267,7 +267,7 @@ spec:
 
 **tooling-app-kustomize/base/service.yaml** – This is a standard kubernetes yaml file for a service.
 
-```
+```yaml
 apiVersion: v1
 kind: Service
 metadata:
@@ -287,7 +287,7 @@ spec:
 
 **tooling-app-kustomize/base/kustomization.yaml** – This is a Kustomization declaritive yaml that is used to let kustomize know what resources to create and monitor in kubernetes.
 
-```
+```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -308,7 +308,7 @@ In the **dev** environment for example, the namespace for dev is created, and th
 Lets have a look at what each file contains.
 
 **tooling-app-kustomize/overlays/dev/namespace.yaml**
-```
+```yaml
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -316,7 +316,7 @@ metadata:
 ```
 
 **tooling-app-kustomize/overlays/dev/deployment.yaml**
-```
+```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -326,17 +326,18 @@ spec:
 ```
 
 **tooling-app-kustomize/overlays/dev/kustomization.yaml**
-```
+```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: dev-tooling
-bases:
-- ../../base
 
-commonLabels:
-  env: dev-tooling
+labels:
+  - pairs:
+      env: dev-tooling
+    includeSelectors: true
 
 resources:
+- ../../base
 - namespace.yaml
 ```
 
@@ -349,11 +350,11 @@ In summary it specifies the following;
 - The namespace where this kustomizaton will create or patch resources
 - The location of the base folder, where the base configuration can be found.
 - The resource(s) to be created – Such as a namespace or deployment
-- A **commonLabel** field which ensures that kubernetes labels and selectors are automatically injected into the resources being created. such as below;
+- A **label** field which ensures that kubernetes labels and selectors are automatically injected into the resources being created. such as below;
 
 Now lets apply the configuration and see what happens.
-```
-kubectl apply -k overlays/dev
+```sh
+kubectl apply -k ./tooling-app-kustomize/overlays/dev
 ```
 
 Notice that the the apply flag here is **-k** rather than the **-f** we have been using all along. This is because kubectl has been made aware of Kustomize. You can use kustomize cli directly, but since you are already familiar with kubectl, it just makes sence to use the kustomize flag that comes bundled with kubectl.
@@ -398,21 +399,24 @@ With Kustomize, you can now begin to patch your environments with extra configur
 - creating new resources, or
 - patching existing resources.
 
-This is all achieved through the **overlays** configuration. The **overlays/dev/kustomization.yaml** example above only creates a new resource. What if we wanted to patch an existing resource. For example increase the pod replica from the default **1** to **3** as shown in the **overlays/dev/deployment.yaml** file
+This is all achieved through the **overlays** configuration. The **tooling-app-kustomize/overlays/dev/kustomization.yaml** example above only creates a new resource. What if we wanted to patch an existing resource. For example increase the pod replica from the default **1** to **3** as shown in the **tooling-app-kustomize/overlays/dev/deployment.yaml** file
 
 It would look like;
 
-```
+```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: dev-tooling
 bases:
 - ../../base
 
-commonLabels:
-  env: dev-tooling
+labels:
+  - pairs:
+      env: dev-tooling
+    includeSelectors: true
 
 resources:
+- ../../base
 - namespace.yaml
 
 patches:
@@ -420,8 +424,8 @@ patches:
 ```
 
 Now lets apply the configuration and see what happens.
-```
-kubectl apply -k overlays/dev
+```sh
+kubectl apply -k ./tooling-app-kustomize/overlays/dev
 ```
 
 Output will look like this;

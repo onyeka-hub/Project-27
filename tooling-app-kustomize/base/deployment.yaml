@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: tooling
-        image: dareyregistry/tooling-app:1.0.2
+        image: dareyregistry/tooling-app:1.0.3
         ports:
         - containerPort: 80
         resources:

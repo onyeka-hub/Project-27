@@ -1,13 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: nginx-dev
+namespace: nginx-prod
 
 # commonLabels:
 #   env: dev-app
 
 labels:
   - pairs:
-      env: dev-app
+      env: prod-app
     includeSelectors: true
 
 resources:
@@ -26,4 +26,4 @@ configMapGenerator:
 
 images:
 - name: nginx
-  newTag: perl
+  newTag: alpine
