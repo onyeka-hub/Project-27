@@ -23,5 +23,5 @@ jobs:
     #     DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
     #     DB_NAME: ${{ secrets.DB_NAME }}
       run: |
-        mysql -h database-1-instance-1.cjcae2iy0tn9.us-east-2.rds.amazonaws.com -u onyekaonu -ponyekaonu toolingdb < tooling_db_schema.sql
+        mysql -h database-1-instance-1.cjcae2iy0tn9.us-east-2.rds.amazonaws.com -u onyeka -ponyekaonu toolingdb < tooling_db_schema.sql
         # mysql -h $AURORA_ENDPOINT -u $DB_USER -p$DB_PASSWORD $DB_NAME < tooling_db_schema.sql
